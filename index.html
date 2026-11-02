@@ -298,8 +298,13 @@ h1 .flag{width:36px;height:24px;margin-right:4px}
 </div>
 
 <!-- Visitor counting with GoatCounter (same account as digstraightthrough.github.io): no cookies, no personal data;
-     our own copy of their script. Only the page path is sent, never the part after "?". -->
-<script>window.goatcounter = { path: function () { return location.pathname || "/"; } };</script>
+     our own copy of their script. Only the page path is sent, never the part after "?" or "#".
+     The site moved from digstraightthrough.github.io/greek-flashcards/ to its own address in November 2026;
+     the page name keeps the old "/greek-flashcards" start so the statistics continue in one line. -->
+<script>window.goatcounter = { path: function () {
+  if (location.hash.indexOf("#move=") === 0) return null;  // the page reloads right after moving progress: count that load only
+  return "/greek-flashcards" + (location.pathname || "/");
+} };</script>
 <script data-goatcounter="https://digstraightthrough.goatcounter.com/count" async src="vendor/goatcounter/count.js"></script>
 <script src="data.js"></script>
 <script src="exam.js"></script>
@@ -407,7 +412,9 @@ const GR_FLAG = `<svg class="flag" viewBox="0 0 27 18" aria-label="Greek flag"><
 function renderHome(){
   state = {view:"home"}; setNav("home");
   const exAll = allExamItems(), exKnown = exAll.filter(i => known.has(i.id)).length;
-  app.innerHTML = `<p class="tagline" lang="el">Μαθαίνω ελληνικά</p><h1>Learn Greek, one card at a time</h1>
+  const notice = movedNotice ? `<div class="info">${esc(movedNotice)}</div>` : "";
+  movedNotice = null;  // shown once
+  app.innerHTML = notice + `<p class="tagline" lang="el">Μαθαίνω ελληνικά</p><h1>Learn Greek, one card at a time</h1>
     <p class="sub">Pick a level, flip the card, mark what you know. Cards you miss come back again.</p>
     <div class="tiles">` + LEVELS.map(lv => {
       const all = cardsOf(lv.id), k = all.filter(c => known.has(c.id)).length;
@@ -1057,7 +1064,54 @@ function installApp(){
   box.hidden = !box.hidden;
 }
 
-renderHome();
+// ---------- moving from the old address ----------
+// Until November 2026 this site lived at digstraightthrough.github.io/greek-flashcards/. Browsers keep saved
+// progress per web address, so that old page now sends visitors here with their progress packed into the link
+// (after "#move=", a part of the link that browsers never send to any server). We add only this site's cards.
+const MOVE_TAG = "#move=";
+let movedNotice = null;
+try { movedNotice = sessionStorage.getItem("movedNotice"); sessionStorage.removeItem("movedNotice"); } catch(e){}
+async function unpackProgress(code){
+  const kind = code.slice(0, 2), b64 = code.slice(2).replace(/-/g, "+").replace(/_/g, "/");
+  const bytes = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+  if(kind === "z:"){
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    return JSON.parse(await new Response(stream).text());
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+function mergeMovedProgress(p){
+  const mine = new Set([...LEVELS.flatMap(l => cardsOf(l.id).map(c => c.id)), ...allExamItems().map(i => i.id)]);
+  const k = new Set(store.get("known", []));
+  let added = 0;
+  for(const id of p.known || []) if(mine.has(id) && !k.has(id)){ k.add(id); added++; }
+  store.set("known", [...k]);
+  const b = store.get("best", {});
+  for(const [key, v] of Object.entries(p.best || {})) if(!key.startsWith("flemish/") && typeof v === "number" && !(b[key] >= v)) b[key] = v;
+  store.set("best", b);
+  const lb = store.get("langBest", {});
+  for(const [key, v] of Object.entries(p.langBest || {})) if(v && typeof v.s === "number" && !(lb[key] && lb[key].s >= v.s)) lb[key] = v;
+  store.set("langBest", lb);
+  for(const [n, text] of Object.entries(p.essays || {})) if(typeof text === "string" && text && !store.get("essay:"+n, "")) store.set("essay:"+n, text);
+  for(const key of ["reverse", "showEnglish", "quizPick"]) if(p.settings && key in p.settings && localStorage.getItem(key) === null) store.set(key, p.settings[key]);
+  return added;
+}
+async function importMovedProgress(){
+  app.innerHTML = `<div class="panel"><div class="big">📦</div><h2>Moving your progress…</h2></div>`;
+  let msg;
+  try {
+    const added = mergeMovedProgress(await unpackProgress(decodeURIComponent(location.hash.slice(MOVE_TAG.length))));
+    msg = added ? `✓ Welcome to the new address! Your progress came with you (${added} cards you know).` : "✓ Welcome to the new address of Greek Flashcards.";
+  } catch(e){
+    console.warn("moving progress:", e);
+    msg = "Welcome to the new address of Greek Flashcards. Sorry, your saved progress could not be moved.";
+  }
+  try { sessionStorage.setItem("movedNotice", msg); } catch(e){}
+  location.replace(location.pathname + location.search);  // reload without the long link
+}
+
+if(location.hash.startsWith(MOVE_TAG)) importMovedProgress();
+else renderHome();
 </script>
 </body>
 </html>
