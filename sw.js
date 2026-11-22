@@ -1,6 +1,6 @@
 // Offline helper for the phone app: keeps a copy of the site so the cards work without internet.
 // Change VERSION every time the site is updated, so phones download the new files.
-const VERSION = "gf-2026-11-02b";
+const VERSION = "gf-2026-11-22a";
 const CORE = ["./", "index.html", "data.js", "exam.js", "language.js", "manifest.webmanifest",
   "vendor/goatcounter/count.js", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 
